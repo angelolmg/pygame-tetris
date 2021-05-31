@@ -2,10 +2,64 @@ import pygame, sys
 from random import choice, seed
 from pygame.locals import *
 
-seed(2)
+#seed(2)
+pygame.init()
+pygame.display.set_caption("Tetris")
+clock = pygame.time.Clock()
+
+FPS = 60
+cell_side = 30
+screen_w, screen_h = 300, 600 
+cell_count_row, cell_count_col = (int(screen_h/cell_side), int(screen_w/cell_side))
+
+screen = pygame.display.set_mode((screen_w, screen_h))
+
+black_color = (0, 0, 0)
+white_color = (255, 255, 255)
+grey_color = (25, 25, 25)
+red_color = (255, 100, 100)
+teal_color = (100, 255, 255)
+green_color = (100, 255, 100)
+
+i_color = (52, 180, 235)
+j_color = (26, 30, 240)
+l_color = (240, 162, 26)
+o_color = (245, 233, 10)
+s_color = (10, 242, 33)
+t_color = (126, 10, 250)
+z_color = (245, 17, 29)
+
+overall_score = 0
+game_over = False
+
+blocked_cells = []
+block_types = ['i', 's', 'j', 't', 'l', 'z', 'o']
+
+UPDATEBLOCKS = USEREVENT + 1
+pygame.time.set_timer(UPDATEBLOCKS, 500, 0)
+pygame.mouse.set_visible(False)
+font = pygame.font.SysFont('arial', 30)
+
 
 def bound(low, high, value):
     return max(low, min(high, value))
+
+class Alert:
+    def __init__(self, screen_w, y_level, color, font, message):
+        self.color = color
+        self.font = font
+        self.message = message
+        self.active = False
+
+        # Text coordinates
+        text_surface = font.render(message, True, color)
+        self.text_x = (screen_w - text_surface.get_width())/2
+        self.text_y = y_level 
+    
+    def draw(self, screen):
+        if len(self.message) > 0:
+            text_surface = self.font.render(self.message, True, self.color)
+            screen.blit(text_surface, (self.text_x, self.text_y))
 
 
 class Cell:
@@ -13,15 +67,12 @@ class Cell:
         self.x = xy[0]
         self.y = xy[1]
         self.color = color
-        #self.rect = (self.x, self.y, cell_side, cell_side)
 
     def update(self):
         self.y += 1
-        #self.rect = (self.x, self.y, cell_side, cell_side)
     
     def move(self, movement):
         self.x += movement
-        #self.rect = (self.x, self.y, cell_side, cell_side)
 
 
     def can_move(self, axis, movement = 0):
@@ -182,6 +233,7 @@ class Shadow:
             moving_down = True
             while moving_down:
                 moving_down = self.update()
+
     
     def hide(self):
         self.active = False
@@ -199,10 +251,20 @@ class Block:
 
         self.shadow = Shadow(block_type)
 
+        # if any of the new cells are spawned in 
+        # blocked region: then the game is over
+
+        for cell in self.current_block:
+            if cell.get_position() in blocked_cells:
+                global game_over
+                game_over = True
+
 
     def update(self):
 
-        if self.can_move:
+        # only update block's y position if its active and the game is not over
+
+        if self.can_move and not game_over:
 
             for cell in self.current_block:
                 if not cell.can_move('y'):
@@ -224,9 +286,12 @@ class Block:
             for block in self.blocks:
                 for cell in block:
                     cell.update()
-            
-            
+
             return True
+
+    # move a block in the x axis
+    # but check if it can first
+    # also update shadow just below
 
     def move(self, movement):
 
@@ -242,6 +307,7 @@ class Block:
         
         self.update_shadow()
         
+    # gets the movement either from mouse or keypress
 
     def get_movement(self):
 
@@ -317,6 +383,10 @@ class Block:
         self.current_block = next_block
         self.update_shadow()
 
+    # try to remove cell by cell position
+    # if current block doesnt have a cell in that position:
+    # then do nothing
+
     def remove(self, cell_pos):
         cell_to_remove = None
 
@@ -328,16 +398,17 @@ class Block:
         if cell_to_remove != None:
             self.current_block.remove(cell_to_remove)
 
+    # keep updating until it can't anymore (blockage)
+
     def move_down(self):
-        
-        # keep updating until it can't anymore (blockage)
         moving_down = True
         while moving_down:
             moving_down = self.update()
 
     def update_shadow(self):
 
-        # reset position
+        # reset position to meet that of the current real block
+
         for i in range(len(self.blocks)):
             for j in range(len(self.blocks[i])):
                 self.shadow.shadows[i][j].x = self.blocks[i][j].x
@@ -345,6 +416,7 @@ class Block:
 
         # update current shadow if spined
         # and move it all the way down
+
         self.shadow.current_shadow = self.shadow.shadows[self.index]
         self.shadow.move_down()
 
@@ -394,8 +466,8 @@ def remove_line(line_y):
     # then check again for new completed lines
 
     check_for_full_lines()
-    
-    
+
+  
 # check the whole board for complete lines
 # bottom up checking every time a piece is down
 
@@ -413,8 +485,8 @@ def check_for_full_lines():
         if full_line:
             remove_line(i)
         i += 1
-    
 
+   
 def draw_game():
     x_offset = 0
     y_offset = 0
@@ -430,44 +502,33 @@ def draw_game():
 
         x_offset = 0
         y_offset += cell_side
+    
+    score_text = font.render(str(overall_score), True, white_color)
+    screen.blit(score_text, ((screen_w - score_text.get_width() - 10), 10))
+
+    if game_over:
+        game_over_alert = font.render('Game Over', True, white_color)
+        retry_alert = font.render("Press R to retry", True, white_color)
+        screen.blit(game_over_alert, (((screen_w - game_over_alert.get_width())/2), screen_h/2))
+        screen.blit(retry_alert, (((screen_w - retry_alert.get_width())/2), screen_h/2 + 30))
 
 
-# MAIN
-pygame.init()
-pygame.display.set_caption("Tetris")
-clock = pygame.time.Clock()
+def reset_game():
 
-FPS = 60
-cell_side = 30
-screen_w, screen_h = 300, 600 
-cell_count_row, cell_count_col = (int(screen_h/cell_side), int(screen_w/cell_side))
+    global game_over, active_blocks, blocked_cells, overall_score
 
-screen = pygame.display.set_mode((screen_w, screen_h))
+    active_blocks = [Block(choice(block_types))]
+    blocked_cells = []
+    game_over = False
+    overall_score = 0
 
-black_color = (0, 0, 0)
-white_color = (255, 255, 255)
-grey_color = (25, 25, 25)
-red_color = (255, 100, 100)
-teal_color = (100, 255, 255)
-green_color = (100, 255, 100)
 
-i_color = (52, 180, 235)
-j_color = (26, 30, 240)
-l_color = (240, 162, 26)
-o_color = (245, 233, 10)
-s_color = (10, 242, 33)
-t_color = (126, 10, 250)
-z_color = (245, 17, 29)
+# add the first block
+# before main loop
 
-overall_score = 0
-
-block_types = ['i', 's', 'j', 't', 'l', 'z', 'o']
+game_over_alert = Alert(screen_w, screen_h/2, red_color, font, "Game Over. Press R to Retry.")
 active_blocks = [Block(choice(block_types))]
-blocked_cells = []
 
-UPDATEBLOCKS = USEREVENT + 1
-pygame.time.set_timer(UPDATEBLOCKS, 500, 0)
-pygame.mouse.set_visible(False)
 
 while True:
     for event in pygame.event.get():
@@ -476,22 +537,29 @@ while True:
             sys.exit()
 
         if event.type == UPDATEBLOCKS:
-            for block in active_blocks:
-                block.update()
+            if not game_over:
+                for block in active_blocks:
+                    block.update()
 
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_r:
-                active_blocks[-1].spin()
-            if event.key == pygame.K_SPACE:
-                active_blocks[-1].move_down()
+            if not game_over:
+                if event.key == pygame.K_r:
+                    active_blocks[-1].spin()
+                if event.key == pygame.K_SPACE:
+                    active_blocks[-1].move_down()
+            else:
+                if event.key == pygame.K_r:
+                    reset_game()
 
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                active_blocks[-1].move_down()
-            if event.button == 3:
-                active_blocks[-1].spin()
-    
-    active_blocks[-1].get_movement()
+            if not game_over:
+                if event.button == 1:
+                    active_blocks[-1].move_down()
+                if event.button == 3:
+                    active_blocks[-1].spin()
+
+    if not game_over:
+        active_blocks[-1].get_movement()
     
     screen.fill(black_color)
     draw_game()
